@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API 連接測試工具</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #7cb342;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+        
+        .test-section h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        
+        button {
+            background: #7cb342;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #689f38;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .result.success {
+            background: #e8f5e8;
+            border: 1px solid #7cb342;
+            color: #2e7d32;
+        }
+        
+        .result.error {
+            background: #ffebee;
+            border: 1px solid #f44336;
+            color: #c62828;
+        }
+        
+        .result.info {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            color: #1565c0;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-indicator.success {
+            background: #4caf50;
+        }
+        
+        .status-indicator.error {
+            background: #f44336;
+        }
+        
+        .status-indicator.warning {
+            background: #ff9800;
+        }
+        
+        .api-urls {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .api-urls code {
+            background: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 2px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 BUY商城 API 連接測試工具</h1>
+        
+        <div class="api-urls">
+            <h3>🔗 API 端點配置</h3>
+            <div>主要API: <code id="main-api">http://localhost:5105/api</code></div>
+            <div>備用API: <code id="backup-api">https://localhost:7044/api</code></div>
+            <div>Swagger: <code>https://localhost:7044/swagger</code></div>
+        </div>
+        
+        <!-- 基礎連接測試 -->
+        <div class="test-section">
+            <h2><span class="status-indicator" id="health-status"></span>1. 基礎連接測試</h2>
+            <button onclick="testHealthCheck()">測試健康檢查</button>
+            <button onclick="testDatabaseConnection()">測試資料庫連接</button>
+            <button onclick="testCors()">測試CORS設定</button>
+            <div id="health-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <!-- 數據測試 -->
+        <div class="test-section">
+            <h2><span class="status-indicator" id="data-status"></span>2. 數據測試</h2>
+            <button onclick="testSampleData()">檢查範例數據</button>
+            <button onclick="createTestData()">建立測試數據</button>
+            <button onclick="testProducts()">測試商品API</button>
+            <button onclick="testCategories()">測試分類API</button>
+            <div id="data-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <!-- Vue.js 前端整合測試 -->
+        <div class="test-section">
+            <h2><span class="status-indicator" id="vue-status"></span>3. Vue.js 前端整合測試</h2>
+            <button onclick="testVueApiIntegration()">測試 Vue API 整合</button>
+            <button onclick="testProductStore()">測試商品 Store</button>
+            <div id="vue-result" class="result" style="display: none;"></div>
+        </div>
+        
+        <!-- 診斷結果 -->
+        <div class="test-section">
+            <h2>🔍 診斷結果</h2>
+            <button onclick="runFullDiagnostic()">執行完整診斷</button>
+            <div id="diagnostic-result" class="result" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <script>
+        // API 基礎 URL (會自動測試多個端點)
+        const API_URLS = [
+            'http://localhost:5105/api',
+            'https://localhost:7044/api',
+            'http://localhost:5099/api'
+        ];
+        
+        let currentApiUrl = API_URLS[0];
+        
+        // 通用的 API 請求函數
+        async function apiRequest(endpoint, options = {}) {
+            const results = [];
+            
+            for (const baseUrl of API_URLS) {
+                try {
+                    const url = baseUrl + endpoint;
+                    console.log(`嘗試連接: ${url}`);
+                    
+                    const response = await fetch(url, {
+                        ...options,
+                        mode: 'cors',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...options.headers
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    results.push({
+                        url: baseUrl,
+                        success: true,
+                        status: response.status,
+                        data: data
+                    });
+                    
+                    // 如果成功，設為當前API URL
+                    currentApiUrl = baseUrl;
+                    break;
+                    
+                } catch (error) {
+                    results.push({
+                        url: baseUrl,
+                        success: false,
+                        error: error.message
+                    });
+                }
+            }
+            
+            return results;
+        }
+        
+        // 顯示結果的輔助函數
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.className = `result ${type}`;
+            element.textContent = message;
+        }
+        
+        function updateStatusIndicator(indicatorId, status) {
+            const indicator = document.getElementById(indicatorId);
+            indicator.className = `status-indicator ${status}`;
+        }
+        
+        // 1. 健康檢查測試
+        async function testHealthCheck() {
+            try {
+                showResult('health-result', '正在測試健康檢查...', 'info');
+                
+                const results = await apiRequest('/test/health');
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    updateStatusIndicator('health-status', 'success');
+                    showResult('health-result', 
+                        `✅ 健康檢查成功！\n` +
+                        `API URL: ${successResult.url}\n` +
+                        `狀態: ${successResult.status}\n` +
+                        `響應: ${JSON.stringify(successResult.data, null, 2)}`, 
+                        'success'
+                    );
+                } else {
+                    updateStatusIndicator('health-status', 'error');
+                    showResult('health-result', 
+                        `❌ 所有API端點都無法連接\n` +
+                        `錯誤詳情:\n` +
+                        results.map(r => `${r.url}: ${r.error}`).join('\n'), 
+                        'error'
+                    );
+                }
+            } catch (error) {
+                updateStatusIndicator('health-status', 'error');
+                showResult('health-result', `❌ 健康檢查失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 測試資料庫連接
+        async function testDatabaseConnection() {
+            try {
+                showResult('health-result', '正在測試資料庫連接...', 'info');
+                
+                const results = await apiRequest('/test/database');
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    showResult('health-result', 
+                        `✅ 資料庫連接成功！\n` +
+                        `統計資料:\n` +
+                        JSON.stringify(successResult.data, null, 2), 
+                        'success'
+                    );
+                } else {
+                    showResult('health-result', 
+                        `❌ 資料庫連接失敗\n` +
+                        `請檢查:\n` +
+                        `1. Azure SQL 資料庫是否正常運行\n` +
+                        `2. 連接字串是否正確\n` +
+                        `3. 防火牆設定是否允許連接`, 
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('health-result', `❌ 資料庫測試失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 測試CORS
+        async function testCors() {
+            try {
+                showResult('health-result', '正在測試CORS設定...', 'info');
+                
+                const results = await apiRequest('/test/cors');
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    showResult('health-result', 
+                        `✅ CORS設定正常！\n` +
+                        `Origin: ${window.location.origin}\n` +
+                        `響應: ${JSON.stringify(successResult.data, null, 2)}`, 
+                        'success'
+                    );
+                } else {
+                    showResult('health-result', 
+                        `❌ CORS設定有問題\n` +
+                        `當前Origin: ${window.location.origin}\n` +
+                        `請確認後端CORS設定包含此Origin`, 
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('health-result', `❌ CORS測試失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 檢查範例數據
+        async function testSampleData() {
+            try {
+                showResult('data-result', '正在檢查範例數據...', 'info');
+                
+                const results = await apiRequest('/test/sample-data');
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    const data = successResult.data;
+                    if (data.data && (data.data.sampleCategories?.length > 0 || data.data.sampleProducts?.length > 0)) {
+                        updateStatusIndicator('data-status', 'success');
+                        showResult('data-result', 
+                            `✅ 發現範例數據！\n` +
+                            `分類數量: ${data.data.sampleCategories?.length || 0}\n` +
+                            `商品數量: ${data.data.sampleProducts?.length || 0}\n` +
+                            `詳細資料:\n${JSON.stringify(data.data, null, 2)}`, 
+                            'success'
+                        );
+                    } else {
+                        updateStatusIndicator('data-status', 'warning');
+                        showResult('data-result', 
+                            `⚠️ 資料庫中暫無數據\n` +
+                            `請點擊"建立測試數據"按鈕來創建測試資料`, 
+                            'error'
+                        );
+                    }
+                } else {
+                    updateStatusIndicator('data-status', 'error');
+                    showResult('data-result', '❌ 無法檢查範例數據', 'error');
+                }
+            } catch (error) {
+                updateStatusIndicator('data-status', 'error');
+                showResult('data-result', `❌ 檢查數據失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 建立測試數據
+        async function createTestData() {
+            try {
+                showResult('data-result', '正在建立測試數據...', 'info');
+                
+                const results = await apiRequest('/seeddata/all', {
+                    method: 'POST'
+                });
+                
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    updateStatusIndicator('data-status', 'success');
+                    showResult('data-result', 
+                        `✅ 測試數據建立成功！\n` +
+                        `響應: ${JSON.stringify(successResult.data, null, 2)}`, 
+                        'success'
+                    );
+                    
+                    // 建立完數據後，自動測試商品API
+                    setTimeout(testProducts, 1000);
+                } else {
+                    showResult('data-result', 
+                        `❌ 建立測試數據失敗\n` +
+                        `可能原因:\n` +
+                        `1. 資料庫連接問題\n` +
+                        `2. 資料已存在\n` +
+                        `3. 權限問題`, 
+                        'error'
+                    );
+                }
+            } catch (error) {
+                showResult('data-result', `❌ 建立測試數據失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 測試商品API
+        async function testProducts() {
+            try {
+                showResult('data-result', '正在測試商品API...', 'info');
+                
+                const results = await apiRequest('/products?page=1&limit=5');
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    const data = successResult.data;
+                    if (data.success && data.data?.data?.length > 0) {
+                        showResult('data-result', 
+                            `✅ 商品API測試成功！\n` +
+                            `總商品數: ${data.data.total}\n` +
+                            `當前頁商品: ${data.data.data.length}\n` +
+                            `第一個商品: ${data.data.data[0].productName}\n` +
+                            `完整響應:\n${JSON.stringify(data, null, 2)}`, 
+                            'success'
+                        );
+                    } else {
+                        showResult('data-result', 
+                            `⚠️ 商品API可連接但無數據\n` +
+                            `響應格式: ${JSON.stringify(data, null, 2)}`, 
+                            'error'
+                        );
+                    }
+                } else {
+                    showResult('data-result', '❌ 商品API無法連接', 'error');
+                }
+            } catch (error) {
+                showResult('data-result', `❌ 商品API測試失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 測試分類API
+        async function testCategories() {
+            try {
+                showResult('data-result', '正在測試分類API...', 'info');
+                
+                const results = await apiRequest('/categories');
+                const successResult = results.find(r => r.success);
+                
+                if (successResult) {
+                    const data = successResult.data;
+                    if (data.success && data.data?.length > 0) {
+                        showResult('data-result', 
+                            `✅ 分類API測試成功！\n` +
+                            `分類數量: ${data.data.length}\n` +
+                            `分類列表: ${data.data.map(c => c.categoryName).join(', ')}\n` +
+                            `完整響應:\n${JSON.stringify(data, null, 2)}`, 
+                            'success'
+                        );
+                    } else {
+                        showResult('data-result', 
+                            `⚠️ 分類API可連接但無數據\n` +
+                            `響應: ${JSON.stringify(data, null, 2)}`, 
+                            'error'
+                        );
+                    }
+                } else {
+                    showResult('data-result', '❌ 分類API無法連接', 'error');
+                }
+            } catch (error) {
+                showResult('data-result', `❌ 分類API測試失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 測試Vue.js API整合
+        async function testVueApiIntegration() {
+            try {
+                showResult('vue-result', '正在測試 Vue.js API 整合...', 'info');
+                
+                // 模擬Vue.js中的API調用
+                const testEndpoints = [
+                    '/products?page=1&limit=12',
+                    '/categories',
+                    '/products/popular?limit=8',
+                    '/products/new?limit=8'
+                ];
+                
+                let allSuccess = true;
+                let results = [];
+                
+                for (const endpoint of testEndpoints) {
+                    try {
+                        const apiResults = await apiRequest(endpoint);
+                        const successResult = apiResults.find(r => r.success);
+                        
+                        if (successResult) {
+                            results.push(`✅ ${endpoint}: 成功`);
+                        } else {
+                            results.push(`❌ ${endpoint}: 失敗`);
+                            allSuccess = false;
+                        }
+                    } catch (error) {
+                        results.push(`❌ ${endpoint}: ${error.message}`);
+                        allSuccess = false;
+                    }
+                }
+                
+                if (allSuccess) {
+                    updateStatusIndicator('vue-status', 'success');
+                    showResult('vue-result', 
+                        `✅ Vue.js API 整合測試全部成功！\n\n` +
+                        `測試結果:\n${results.join('\n')}\n\n` +
+                        `✅ 您的前端現在可以正常載入資料庫數據了！\n` +
+                        `建議重新啟動前端應用程式: npm run dev`, 
+                        'success'
+                    );
+                } else {
+                    updateStatusIndicator('vue-status', 'error');
+                    showResult('vue-result', 
+                        `⚠️ 部分API端點測試失敗\n\n` +
+                        `測試結果:\n${results.join('\n')}`, 
+                        'error'
+                    );
+                }
+            } catch (error) {
+                updateStatusIndicator('vue-status', 'error');
+                showResult('vue-result', `❌ Vue.js 整合測試失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 測試商品Store
+        async function testProductStore() {
+            try {
+                showResult('vue-result', '正在測試商品 Store 功能...', 'info');
+                
+                // 測試不同的API調用模式
+                const storeTests = [
+                    { name: '商品列表', endpoint: '/products' },
+                    { name: '商品詳情', endpoint: '/products/1' },
+                    { name: '商品搜尋', endpoint: '/products/search?keyword=iPhone' },
+                    { name: '分類商品', endpoint: '/categories/1/products' }
+                ];
+                
+                let results = [];
+                
+                for (const test of storeTests) {
+                    try {
+                        const apiResults = await apiRequest(test.endpoint);
+                        const successResult = apiResults.find(r => r.success);
+                        
+                        if (successResult) {
+                            results.push(`✅ ${test.name}: 正常`);
+                        } else {
+                            results.push(`❌ ${test.name}: 無法連接`);
+                        }
+                    } catch (error) {
+                        results.push(`❌ ${test.name}: ${error.message}`);
+                    }
+                }
+                
+                showResult('vue-result', 
+                    `商品 Store 測試結果:\n\n` +
+                    results.join('\n') + '\n\n' +
+                    `📋 前端整合檢查清單:\n` +
+                    `□ 確認 .env.development 中的 VITE_API_URL 設定正確\n` +
+                    `□ 重新啟動前端開發伺服器 (npm run dev)\n` +
+                    `□ 檢查瀏覽器開發者工具的 Network 標籤\n` +
+                    `□ 確認後端API伺服器正在運行`, 
+                    'info'
+                );
+            } catch (error) {
+                showResult('vue-result', `❌ Store 測試失敗: ${error.message}`, 'error');
+            }
+        }
+        
+        // 執行完整診斷
+        async function runFullDiagnostic() {
+            showResult('diagnostic-result', '🔍 開始執行完整診斷...', 'info');
+            
+            const diagnosticSteps = [
+                { name: '健康檢查', func: testHealthCheck },
+                { name: '資料庫連接', func: testDatabaseConnection },
+                { name: '範例數據檢查', func: testSampleData },
+                { name: 'Vue.js 整合', func: testVueApiIntegration }
+            ];
+            
+            let diagnosticReport = '🔍 完整診斷報告\n' + '='.repeat(50) + '\n\n';
+            
+            for (const step of diagnosticSteps) {
+                diagnosticReport += `正在執行: ${step.name}...\n`;
+                try {
+                    await step.func();
+                    diagnosticReport += `✅ ${step.name}: 完成\n`;
+                } catch (error) {
+                    diagnosticReport += `❌ ${step.name}: 失敗 - ${error.message}\n`;
+                }
+                diagnosticReport += '\n';
+            }
+            
+            diagnosticReport += '📋 診斷總結\n' + '-'.repeat(30) + '\n';
+            diagnosticReport += `API URL: ${currentApiUrl}\n`;
+            diagnosticReport += `時間: ${new Date().toLocaleString()}\n`;
+            diagnosticReport += `瀏覽器: ${navigator.userAgent}\n\n`;
+            
+            diagnosticReport += '🔧 建議解決步驟:\n';
+            diagnosticReport += '1. 確認後端API在正確端口運行\n';
+            diagnosticReport += '2. 檢查資料庫連接設定\n';
+            diagnosticReport += '3. 建立測試數據\n';
+            diagnosticReport += '4. 更新前端API配置\n';
+            diagnosticReport += '5. 重啟前端開發伺服器\n';
+            
+            showResult('diagnostic-result', diagnosticReport, 'info');
+        }
+        
+        // 頁面載入後自動執行基礎檢查
+        window.addEventListener('load', function() {
+            // 更新API URL顯示
+            document.getElementById('main-api').textContent = currentApiUrl;
+            
+            setTimeout(() => {
+                console.log('開始自動診斷...');
+                testHealthCheck();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
